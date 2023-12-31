@@ -280,7 +280,7 @@ async function writeLinkToSheet(sheets, link, row, linkCol) {
       }
     });
     
-  } catch (error) {
+  } catch (err) {
     throw err;
   }
 }

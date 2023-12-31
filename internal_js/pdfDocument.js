@@ -16,6 +16,13 @@ if (firstOpenFlag == 0) {
     for (var j = 0; j < 6; j++) {
         this.getField(tahomaFields[j]).textFont = "Tahoma,Bold"
     }
+    this.getField("dropDown").value = imd.defaultTrnOvr;
+    fields.forEach((fi, ind) => {
+        
+        this.getField(fi).value = imd[objs[ind]].netPrem[imd.defaultTrnOvr];  
+       
+    })
+
     firstOpenFlag.value = 1;
 
 }

@@ -4,6 +4,9 @@ const process = require('process');
 const { authenticate } = require('@google-cloud/local-auth');
 const { google } = require('googleapis');
 const { PDFDocument, rgb } = require('pdf-lib');
+const resizeImageForPDF = require('./resizeImage.js');
+
+
 
 
 // If modifying these scopes, delete token.json.
@@ -108,11 +111,8 @@ async function pdf_crt(auth) {
 
   //Image Download
   
-  
-  
-  const imagePath = await downloadImage(drive, imageURL, companyName)
-  
-  
+  let imageDlPath= await downloadImage(drive, imageURL, companyName);
+  const imagePath = await resizeImageForPDF(imageDlPath);
   
 
   // create pdf file and open it
@@ -139,9 +139,10 @@ async function pdf_crt(auth) {
   const sumInss = ['sumInsPI', 'sumInsGL', 'deductible']
 
   let iter = 0;
-  for(const size of sizes){
-    for(const si of sumInss) {
-      pdfDoc.getForm().getField(sumInsuredFields[iter]).setText(pdf_data[size][si]);
+  for(const si of sumInss){
+    for(const size of sizes) {
+      let suminsText = pdf_data[size][si];
+      pdfDoc.getForm().getField(sumInsuredFields[iter]).setText(suminsText);
       iter++;
     }
   }
@@ -159,13 +160,28 @@ async function pdf_crt(auth) {
   // get the link of the file
   const uploadedFileLink = await generateFileLink(drive, uploadedFileID);
   
-  writeLinkToSheet(sheets, uploadedFileLink, companyRow, linkCol);
+  await writeLinkToSheet(sheets, uploadedFileLink, companyRow, linkCol);
+
+  fs.unlink(imageDlPath,(err) => {
+    if (err) {
+      console.error('Error deleting file:', err);
+      throw new Error('File deletion failed');
+    }
+    console.log('File deleted successfully.');
+  });
+  fs.unlink(imagePath, (err) => {
+    if (err) {
+      console.error('Error deleting file:', err);
+      throw new Error('File deletion failed');
+    }
+    console.log('File deleted successfully.');
+  })
 }
 
 
 authorize().then(pdf_crt).catch();
 function new_file(companyName) {
-  const sourceFilePath = path.join(process.cwd(), 'assets/template/new_template.pdf'); // Replace with the path to your source PDF file
+  const sourceFilePath = path.join(process.cwd(), 'assets/template/updated_template.pdf'); // Replace with the path to your source PDF file
   const destinationFolderPath = path.join(process.cwd(), 'pdfs'); // Replace with the path to your destination folder
 
   // Check if the source file exists
@@ -203,7 +219,7 @@ async function addImagetoPDF(pdfDoc, imagePath) {
   const { width, height } = image.scale(0.19); // Adjust the scale factor as needed
   page.drawImage(image, {
     x: 120, // X-coordinate of the image
-    y: 325, // Y-coordinate of the image
+    y: 330, // Y-coordinate of the image
     width: width, // Width of the image
     height: height, // Height of the image
   });
@@ -215,8 +231,8 @@ function extractImageIdFromUrl(url) {
   if (match && match.length > 1) {
       return match[1];
   } else {
-    throw err;
-      return null;
+    console.log("Image Could not be exctracted from the URL");
+    throw new Error("Image URL parsing failed")
   }
 }
 
@@ -240,10 +256,10 @@ async function uploadFile(auth, filePath) {
       media,
       fields: 'id',
     });
-    
+    console.log("File uploaded successfully")
     return res.data.id;
   } catch (err) {
-    throw err;
+    console.log("Uploading file failed", err)
     return;
   }
 
@@ -281,7 +297,8 @@ async function writeLinkToSheet(sheets, link, row, linkCol) {
     });
     
   } catch (err) {
-    throw err;
+    console.log("Couldn't write the link to sheet", err)
+    return
   }
 }
 function numberToColumnLetter(columnNumber) {
@@ -295,23 +312,51 @@ function numberToColumnLetter(columnNumber) {
 }
 
 async function downloadImage(drive, imageLink, companyName) {
-  
   let imageID = extractImageIdFromUrl(imageLink);
-  const imagePath = path.join(process.cwd(), 'images' ,companyName + '.jpeg')
-  const dest = fs.createWriteStream(imagePath)
+  const basePath = path.join(process.cwd(), 'images', companyName);
+  const dest = fs.createWriteStream(`${basePath}.tmp`); // Using a temporary file name
+
   try {
     const response = await drive.files.get(
       { fileId: imageID, alt: 'media' },
       { responseType: 'stream' }
     );
 
+    const contentType = response.headers['content-type'];
+    let extension = '.jpeg'; // Default to JPEG if content-type is not available
+
+    if (contentType) {
+      if (contentType === 'image/png') {
+        extension = '.png';
+      } else if (contentType === 'image/jpeg') {
+        extension = '.jpeg';
+      }
+      // Handle other image types if needed
+    }
+
+    const finalPath = `${basePath}${extension}`;
+
     response.data
       .on('error', err => {
+        fs.unlinkSync(`${basePath}.tmp`); // Remove the temporary file on error
         throw err;
       })
       .pipe(dest);
-      return imagePath;
+
+    return new Promise((resolve, reject) => {
+      dest.on('finish', () => {
+        fs.rename(`${basePath}.tmp`, finalPath, err => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(finalPath);
+          }
+        });
+      });
+    });
   } catch (err) {
     throw "Image could not be downloaded";
   }
 }
+
+

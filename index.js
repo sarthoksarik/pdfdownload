@@ -15,8 +15,8 @@ const SCOPES = ['https://www.googleapis.com/auth/spreadsheets https://www.google
 // created automatically when the authorization flow completes for the first
 // time.
 // Set the desired working directory
-const TOKEN_PATH = path.join(process.cwd(), 'assets/creds','token.json');
-const CREDENTIALS_PATH = path.join(process.cwd(), 'assets/creds', 'credentials.json');
+// const TOKEN_PATH = path.join(process.cwd(), 'assets/creds','token.json');
+const CREDENTIALS_PATH = require(path.join(process.cwd(), 'assets/creds', 'serviceaccount.json'));
 
 /**
  * Read json for drive ID
@@ -25,58 +25,22 @@ const jsonData = fs.readFileSync(path.join(process.cwd(), 'assets', 'ids.json'),
 
 // Parse the JSON data
 const idData = JSON.parse(jsonData);
-
-/**
- * Reads previously authorized credentials from the save file.
- *
- * @return {Promise<OAuth2Client|null>}
- */
-async function loadSavedCredentialsIfExist() {
-  try {
-    const content = await fs.promises.readFile(TOKEN_PATH);
-    const credentials = JSON.parse(content);
-    return google.auth.fromJSON(credentials);
-  } catch (err) {
-    return null;
-  }
-}
-
-/**
- * Serializes credentials to a file comptible with GoogleAUth.fromJSON.
- *
- * @param {OAuth2Client} client
- * @return {Promise<void>}
- */
-async function saveCredentials(client) {
-  const content = await fs.promises.readFile(CREDENTIALS_PATH);
-  const keys = JSON.parse(content);
-  const key = keys.installed || keys.web;
-  const payload = JSON.stringify({
-    type: 'authorized_user',
-    client_id: key.client_id,
-    client_secret: key.client_secret,
-    refresh_token: client.credentials.refresh_token,
-  });
-  await fs.promises.writeFile(TOKEN_PATH, payload);
-}
-
 /**
  * Load or request or authorization to call APIs.
  *
  */
 async function authorize() {
-  let client = await loadSavedCredentialsIfExist();
-  if (client) {
-    return client;
-  }
-  client = await authenticate({
+  
+  // Set up JWT client directly from the service account key
+  const jwtClient = new google.auth.JWT({
+    email: CREDENTIALS_PATH.client_email,
+    key: CREDENTIALS_PATH.private_key,
     scopes: SCOPES,
-    keyfilePath: CREDENTIALS_PATH,
   });
-  if (client.credentials) {
-    await saveCredentials(client);
-  }
-  return client;
+
+  // Authenticate and return the client
+  await jwtClient.authorize();
+  return jwtClient;
 }
 /**
  * copy the temple pdf and create a client pdf
